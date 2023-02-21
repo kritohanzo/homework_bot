@@ -39,6 +39,15 @@ HOMEWORK_VERDICTS = {
     "rejected": "Работа проверена: у ревьюера есть замечания.",
 }
 
+EXCEPTION_ERROR_MESSAGES = {
+    NotAvailableEndpoint: "Эндпоинт недоступен",
+    RequiredKeysAreMissing: "Ожидаемые ключи в ответе API не обнаружены",
+    MissingHomeworkName: 'Отстствует ключ "homework_name" в ответе API',
+    MissingHomeworkStatus: "Отсутствует статус домашней работы",
+    UnknownHomeworkStatus: "Получен недокументированный "
+                           "статус домашней работы",
+}
+
 
 def check_tokens():
     """Проверяет, что все нужные переменные окружения присутствуют."""
@@ -78,8 +87,7 @@ def get_api_answer(timestamp):
             ENDPOINT, headers=HEADERS, params={"from_date": timestamp}
         )
         if response.status_code != 200:
-            logging.error("Эндпоинт недоступен")
-            raise NotAvailableEndpoint("Эндпоинт недоступен")
+            raise NotAvailableEndpoint
         response = response.json()
         return response
     except requests.RequestException:
@@ -91,22 +99,14 @@ def get_api_answer(timestamp):
 def check_response(response):
     """Проверяет, что ответ от сервера поступил в нужном виде."""
     if not isinstance(response, dict):
-        logging.error("Ответ пришёл не в виде словаря")
         raise TypeError("Ответ пришёл не в виде словаря")
     if not isinstance(response.get("homeworks"), list):
-        logging.error(
-            'В ответе API домашки под ключом "homeworks" '
-            "данные приходят не в виде списка"
-        )
         raise TypeError(
             'В ответе API домашки под ключом "homeworks" '
             "данные приходят не в виде списка"
         )
     if "homeworks" not in response or "current_date" not in response:
-        logging.error("Ожидаемые ключи в ответе API не обнаружены")
-        raise RequiredKeysAreMissing(
-            "Ожидаемые ключи в ответе API не обнаружены"
-        )
+        raise RequiredKeysAreMissing
     if len(response.get("homeworks")) == 0:
         raise NoNewStatuses
 
@@ -114,32 +114,24 @@ def check_response(response):
 def parse_status(homework):
     """Проверяет, что у домашки изменился вердикт ревьювера."""
     if "homework_name" not in homework:
-        logging.error('Отстствует ключ "homework_name" в ответе API')
-        raise MissingHomeworkName(
-            'Отстствует ключ "homework_name" в ответе API'
-        )
+        raise MissingHomeworkName
     if "status" not in homework:
-        logging.error("Отсутствует статус домашней работы")
         raise MissingHomeworkStatus
     if homework.get("status") not in HOMEWORK_VERDICTS:
-        logging.error("Получен недокументированный статус домашней работы")
         raise UnknownHomeworkStatus
     homework_name = homework.get("homework_name")
     verdict = HOMEWORK_VERDICTS.get(homework.get("status"))
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
-# flake8: noqa: C901
+
 def main():
     """Основная логика работы бота."""
-    # Не могу никак додуматься как сделать так,
-    # чтобы бот не отправлял повторные сообщения об ошибках,
-    # кроме как реализовать список уже отправленных и чистить его,
-    # если отправлена другая, но это как-то не профессионально...
-
     check_tokens()
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
+
+    last_sended_problem_in_tg = "empty var"
 
     while True:
         try:
@@ -149,23 +141,31 @@ def main():
             message = parse_status(api_answer.get("homeworks")[0])
             send_message(bot, message)
             timestamp = api_answer.get("current_date")
-        except NotAvailableEndpoint as error:
-            send_message(bot, error)
-        except RequiredKeysAreMissing as error:
-            send_message(bot, error)
         except TypeError as error:
-            send_message(bot, error)
+            logging.error(error)
+            if last_sended_problem_in_tg != error:
+                send_message(bot, error)
+                last_sended_problem_in_tg = error
         except NoNewStatuses:
             logging.debug("Нет новых статусов в ответах")
-        except MissingHomeworkName as error:
-            send_message(bot, error)
-        except MissingHomeworkStatus as error:
-            send_message(bot, error)
-        except UnknownHomeworkStatus as error:
-            send_message(bot, error)
         except Exception as error:
-            logging.error(f"Сбой в работе программы: {error}")
-            send_message(bot, f"Сбой в работе программы: {error}")
+            if (
+                EXCEPTION_ERROR_MESSAGES[error.__class__]
+                in EXCEPTION_ERROR_MESSAGES
+            ):
+                logging.error(f"{EXCEPTION_ERROR_MESSAGES[error.__class__]}")
+                if last_sended_problem_in_tg != error:
+                    send_message(
+                        bot, EXCEPTION_ERROR_MESSAGES[error.__class__]
+                    )
+                    last_sended_problem_in_tg = error
+            else:
+                logging.error(f"Неизвестный сбой в работе программы: {error}")
+                if last_sended_problem_in_tg != error:
+                    send_message(
+                        bot, f"Неизвестный сбой в работе программы: {error}"
+                    )
+                    last_sended_problem_in_tg = error
         finally:
             time.sleep(RETRY_PERIOD)
 
