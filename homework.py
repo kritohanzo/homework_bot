@@ -97,11 +97,11 @@ def check_response(response):
     if not isinstance(response.get("homeworks"), list):
         logging.error(
             'В ответе API домашки под ключом "homeworks" '
-            'данные приходят не в виде списка'
+            "данные приходят не в виде списка"
         )
         raise TypeError(
             'В ответе API домашки под ключом "homeworks" '
-            'данные приходят не в виде списка'
+            "данные приходят не в виде списка"
         )
     if "homeworks" not in response or "current_date" not in response:
         logging.error("Ожидаемые ключи в ответе API не обнаружены")
