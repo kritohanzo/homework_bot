@@ -129,7 +129,7 @@ def parse_status(homework):
     verdict = HOMEWORK_VERDICTS.get(homework.get("status"))
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
-
+# flake8: noqa: C901
 def main():
     """Основная логика работы бота."""
     # Не могу никак додуматься как сделать так,
