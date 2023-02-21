@@ -11,7 +11,6 @@ from exceptions import (
     MissingEnvironmentVariables,
     NotAvailableEndpoint,
     RequiredKeysAreMissing,
-    UnexpectedHomeworkStatus,
     MissingHomeworkName,
     MissingHomeworkStatus,
     UnknownHomeworkStatus,
@@ -158,8 +157,6 @@ def main():
             send_message(bot, error)
         except NoNewStatuses:
             logging.debug("Нет новых статусов в ответах")
-        except UnexpectedHomeworkStatus as error:
-            send_message(bot, error)
         except MissingHomeworkName as error:
             send_message(bot, error)
         except MissingHomeworkStatus as error:
