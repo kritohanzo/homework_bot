@@ -8,21 +8,17 @@ from dotenv import load_dotenv
 import telegram
 
 from exceptions import (
-    MissingEnvironmentVariables,
     NotAvailableEndpoint,
     RequiredKeysAreMissing,
     MissingHomeworkName,
     MissingHomeworkStatus,
     UnknownHomeworkStatus,
     NoNewStatuses,
+    MessageNotSended,
+    RequestToAPIError,
 )
 
 load_dotenv()
-
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] - %(message)s", level=logging.INFO
-)
-logging.StreamHandler(sys.stdout)
 
 PRACTICUM_TOKEN = os.getenv("PRACTICUM_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -46,43 +42,36 @@ EXCEPTION_ERROR_MESSAGES = {
     MissingHomeworkStatus: "Отсутствует статус домашней работы",
     UnknownHomeworkStatus: "Получен недокументированный "
                            "статус домашней работы",
+    RequestToAPIError: "При обработке запроса к API "
+                       "произошло неоднозначное исключение.",
 }
 
 
-def check_tokens():
+def check_tokens() -> None:
     """Проверяет, что все нужные переменные окружения присутствуют."""
-    if not PRACTICUM_TOKEN:
-        logging.critical(
-            "Отсутствует как минимум PRACTICUM_TOKEN. "
-            "Нет смысла продолжать работу дальше."
-        )
-        raise MissingEnvironmentVariables
-    if not TELEGRAM_TOKEN:
-        logging.critical(
-            "Отсутствует как минимум TELEGRAM_TOKEN. "
-            "Нет смысла продолжать работу дальше."
-        )
-        raise MissingEnvironmentVariables
-    if not TELEGRAM_CHAT_ID:
-        logging.critical(
-            "Отсутствует как минимум TElEGRAM_CHAT_ID. "
-            "Нет смысла продолжать работу дальше."
-        )
-        raise MissingEnvironmentVariables
+    feel_good = all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
+    return feel_good
 
 
-def send_message(bot, message):
+def send_message(bot: object, message: str) -> None:
     """Отправляет сообщения через объект бота в диалог с ID из константы."""
+    logging.debug(f'Отправляем сообщение "{message}"')
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logging.debug(f'Сообщение "{message}" успешно отправлено')
-    except Exception as error:
-        logging.error(f"Ошибка при отправке сообщения: {error}")
+        logging.debug(f'Сообщение "{message}" было успешно отправлено')
+    except telegram.error.BadRequest as error:
+        raise MessageNotSended(
+            f'Сообщение "{message}" не было доставлено: {error}'
+        )
 
 
-def get_api_answer(timestamp):
+def get_api_answer(timestamp: int) -> dict:
     """Получает данные с удалённого сервера."""
     try:
+        logging.debug(
+            f"Отправляем запрос к API. Эндпоинт: {ENDPOINT}. "
+            f'Параметры: ["from_date": {timestamp}]'
+        )
         response = requests.get(
             ENDPOINT, headers=HEADERS, params={"from_date": timestamp}
         )
@@ -91,12 +80,10 @@ def get_api_answer(timestamp):
         response = response.json()
         return response
     except requests.RequestException:
-        logging.error(
-            "При обработке запроса к API произошло неоднозначное исключение."
-        )
+        raise RequestToAPIError
 
 
-def check_response(response):
+def check_response(response: dict) -> None:
     """Проверяет, что ответ от сервера поступил в нужном виде."""
     if not isinstance(response, dict):
         raise TypeError("Ответ пришёл не в виде словаря")
@@ -111,7 +98,7 @@ def check_response(response):
         raise NoNewStatuses
 
 
-def parse_status(homework):
+def parse_status(homework: dict) -> str:
     """Проверяет, что у домашки изменился вердикт ревьювера."""
     if "homework_name" not in homework:
         raise MissingHomeworkName
@@ -123,21 +110,24 @@ def parse_status(homework):
     verdict = HOMEWORK_VERDICTS.get(homework.get("status"))
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
-
-def main():
+# flake8: noqa: C901
+def main() -> None:
     """Основная логика работы бота."""
-    check_tokens()
+    if not check_tokens():
+        logging.critical(
+            "Отсутствуют какие-то обязательные переменные. "
+            "Нет смысла продолжать работу дальше."
+        )
+        sys.exit()
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
-
     last_sended_problem_in_tg = "empty var"
 
     while True:
         try:
             api_answer = get_api_answer(timestamp)
             check_response(api_answer)
-            print(api_answer)
             message = parse_status(api_answer.get("homeworks")[0])
             send_message(bot, message)
             timestamp = api_answer.get("current_date")
@@ -148,6 +138,8 @@ def main():
                 last_sended_problem_in_tg = error
         except NoNewStatuses:
             logging.debug("Нет новых статусов в ответах")
+        except MessageNotSended as error:
+            logging.error(error)
         except Exception as error:
             if (
                 EXCEPTION_ERROR_MESSAGES[error.__class__]
@@ -171,4 +163,8 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        format="%(asctime)s [%(levelname)s] - %(message)s", level=logging.INFO
+    )
+    logging.StreamHandler(sys.stdout)
     main()
