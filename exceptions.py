@@ -22,9 +22,5 @@ class NoNewStatuses(Exception):
     """Нет новых статусов домашней работы."""
 
 
-class MessageNotSended(Exception):
-    """Сообщение не было отправлено."""
-
-
 class RequestToAPIError(Exception):
     """При запросе к API произошла ошибка."""

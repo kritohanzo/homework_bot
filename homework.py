@@ -14,7 +14,6 @@ from exceptions import (
     MissingHomeworkStatus,
     UnknownHomeworkStatus,
     NoNewStatuses,
-    MessageNotSended,
     RequestToAPIError,
 )
 
@@ -55,14 +54,14 @@ def check_tokens() -> None:
 
 def send_message(bot: object, message: str) -> None:
     """Отправляет сообщения через объект бота в диалог с ID из константы."""
-    logging.debug(f'Отправляем сообщение "{message}"')
     try:
+        logging.debug(f'Отправляем сообщение "{message}"')
         bot.send_message(TELEGRAM_CHAT_ID, message)
+    except telegram.error.TelegramError as error:
+        # иначе pytest не пропускает
+        logging.error(f'Сообщение "{message}" не было доставлено: {error}')
+    else:
         logging.debug(f'Сообщение "{message}" было успешно отправлено')
-    except telegram.error.BadRequest as error:
-        raise MessageNotSended(
-            f'Сообщение "{message}" не было доставлено: {error}'
-        )
 
 
 def get_api_answer(timestamp: int) -> dict:
@@ -138,8 +137,6 @@ def main() -> None:
                 last_sended_problem_in_tg = error
         except NoNewStatuses:
             logging.debug("Нет новых статусов в ответах")
-        except MessageNotSended as error:
-            logging.error(error)
         except Exception as error:
             if (
                 EXCEPTION_ERROR_MESSAGES[error.__class__]
